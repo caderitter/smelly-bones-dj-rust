@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-songbird = "0.3.0"
-serenity = "0.11"
+songbird = { version = "0.3.0", features = ["builtin-queue"]}
+serenity = { version = "0.11", features = ["cache", "framework", "standard_framework", "voice"] }
 tokio = { version = "1", features = ["full"] }
