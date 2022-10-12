@@ -1,6 +1,6 @@
-use std::{collections::HashMap, env};
+use std::env;
 
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use serenity::{
     async_trait,
     client::Context,
@@ -16,8 +16,9 @@ use serenity::{
     prelude::GatewayIntents,
     Result as SerenityResult,
 };
-
 use songbird::{input::Restartable, SerenityInit};
+
+mod youtube;
 
 struct Handler;
 
@@ -54,14 +55,10 @@ async fn main() {
 #[command]
 #[only_in(guilds)]
 async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    let query = match  msg.content.get(6..) {
+    let query = match msg.content.get(6..) {
         Some(query) => query,
         None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Must provide a query")
-                    .await,
-            );
+            check_msg(msg.channel_id.say(&ctx.http, "Must provide a query").await);
             return Ok(());
         }
     };
@@ -69,7 +66,7 @@ async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let url = if query.starts_with("http") {
         query.to_string()
     } else {
-        let json = match search_youtube(query).await {
+        let resp = match youtube::search_youtube(query).await {
             Ok(video_id) => video_id,
             Err(_) => {
                 check_msg(
@@ -80,18 +77,16 @@ async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
                 return Ok(());
             }
         };
-        match get_video_from_json(&json) {
-            Some(id) => id,
+
+        let video_id = match resp.items.get(0) {
+            Some(item) => &item.id.video_id,
             None => {
-                check_msg(
-                    msg.channel_id
-                        .say(&ctx.http, "There was an error parsing YouTube results")
-                        .await,
-                );
+                check_msg(msg.channel_id.say(&ctx.http, "There were no results").await);
                 return Ok(());
             }
-        }
-    }; 
+        };
+        video_id.to_string()
+    };
 
     let guild = msg.guild(&ctx.cache).unwrap();
     let guild_id = guild.id;
@@ -99,7 +94,7 @@ async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let manager = songbird::get(ctx)
         .await
         .expect("Songbird Voice client placed in at initialisation.")
-        .clone(); 
+        .clone();
 
     let handler_lock = match manager.get(guild_id) {
         Some(handler_lock) => handler_lock,
@@ -259,25 +254,6 @@ async fn playtop(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             .await,
     );
     Ok(())
-}
-
-async fn search_youtube(query: &str) -> Result<serde_json::Value, reqwest::Error> {
-    let youtube_token = env::var("YOUTUBE_TOKEN").expect("token");
-    let url = format!("https://youtube.googleapis.com/youtube/v3/search?q={}&key={}", query, youtube_token);
-    let client = reqwest::Client::new();
-    let json = client.get(url)
-        .header("Accept", "application/json")
-        .send()
-        .await?
-        .json::<serde_json::Value>()
-        .await?;
-    Ok(json)
-}
-
-fn get_video_from_json(json: &Value) -> Option<String> {
-    let first_video = json.get("items")?.get(0)?;
-    let video_id = first_video.get("id")?.get("videoId")?.to_string();
-    Some(format!("https://www.youtube.com/watch?v={}", video_id.trim_matches('\"')))
 }
 
 fn check_url(_msg: &Message, mut args: Args) -> Result<String, ()> {
