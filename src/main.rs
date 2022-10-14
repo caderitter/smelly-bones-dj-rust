@@ -1,6 +1,5 @@
 use std::env;
 
-use serde::{Deserialize, Serialize};
 use serenity::{
     async_trait,
     client::Context,
@@ -30,7 +29,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(play, skip, playtop)]
+#[commands(play, skip, playtop, remove)]
 struct General;
 
 #[tokio::main]
@@ -253,6 +252,56 @@ async fn playtop(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
             .say(&ctx.http, "Put your song on top of the queue")
             .await,
     );
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let index = match args.single::<i32>() {
+        Ok(arg) => arg,
+        Err(_) => {
+            check_msg(
+                msg.channel_id
+                    .say(&ctx.http, "You need to provide a valid index")
+                    .await,
+            );
+            return Ok(());
+        }
+    };
+
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    let handler_lock = match manager.get(guild_id) {
+        Some(handler_lock) => handler_lock,
+        None => {
+            check_msg(
+                msg.channel_id
+                    .say(&ctx.http, "Not in a voice channel")
+                    .await,
+            );
+            return Ok(());
+        }
+    };
+
+    let handler = handler_lock.lock().await;
+    let queue = handler.queue();
+    let track = match queue.modify_queue(|q| q.remove(index as usize)) {
+        Some(track) => track,
+        None => {
+            check_msg(msg.channel_id.say(&ctx.http, "Index out of bounds").await);
+            return Ok(());
+        }
+    };
+
+    track.stop().expect("Error while trying to stop track");
+
     Ok(())
 }
 
