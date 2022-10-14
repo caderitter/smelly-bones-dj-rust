@@ -54,37 +54,12 @@ async fn main() {
 #[command]
 #[only_in(guilds)]
 async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    let query = match msg.content.get(6..) {
-        Some(query) => query,
-        None => {
-            check_msg(msg.channel_id.say(&ctx.http, "Must provide a query").await);
+    let url = match youtube::get_url_from_msg(msg).await {
+        Ok(url) => url,
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
             return Ok(());
         }
-    };
-
-    let url = if query.starts_with("http") {
-        query.to_string()
-    } else {
-        let resp = match youtube::search_youtube(query).await {
-            Ok(video_id) => video_id,
-            Err(_) => {
-                check_msg(
-                    msg.channel_id
-                        .say(&ctx.http, "There was an error searching YouTube")
-                        .await,
-                );
-                return Ok(());
-            }
-        };
-
-        let video_id = match resp.items.get(0) {
-            Some(item) => &item.id.video_id,
-            None => {
-                check_msg(msg.channel_id.say(&ctx.http, "There were no results").await);
-                return Ok(());
-            }
-        };
-        video_id.to_string()
     };
 
     let guild = msg.guild(&ctx.cache).unwrap();
@@ -192,15 +167,11 @@ async fn skip(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
 
 #[command]
 #[only_in(guilds)]
-async fn playtop(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
-    let url = match check_url(msg, args) {
+async fn playtop(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let url = match youtube::get_url_from_msg(msg).await {
         Ok(url) => url,
-        Err(_) => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Must provide a valid URL")
-                    .await,
-            );
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
             return Ok(());
         }
     };
@@ -240,12 +211,21 @@ async fn playtop(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
 
     handler.enqueue_source(source.into());
 
-    // swap the first and last in queue
     let queue = handler.queue();
-    queue.modify_queue(|q| {
-        let len = q.len();
-        q.swap(1, len - 1);
-    });
+
+    // 0th index is currently playing
+    // if we queue a song while one is playing, our queue is now size two - don't do anything
+    // else, pop the newly queued track and put it in the "front" - behind the currently playing track
+    if queue.len() > 2 {
+        queue.modify_queue(|q| {
+            match q.pop_back() {
+                Some(track) => {
+                    q.insert(1, track)
+                },
+                None => ()
+            }
+        });
+    }
 
     check_msg(
         msg.channel_id
@@ -303,18 +283,6 @@ async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     track.stop().expect("Error while trying to stop track");
 
     Ok(())
-}
-
-fn check_url(_msg: &Message, mut args: Args) -> Result<String, ()> {
-    match args.single::<String>() {
-        Ok(url) => {
-            if !url.starts_with("http") {
-                return Err(());
-            }
-            Ok(url)
-        }
-        Err(_) => Err(()),
-    }
 }
 
 fn check_msg(result: SerenityResult<Message>) {
