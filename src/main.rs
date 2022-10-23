@@ -18,6 +18,7 @@ use serenity::{
 use songbird::{input::Restartable, SerenityInit};
 
 mod youtube;
+mod util;
 
 struct Handler;
 
@@ -34,7 +35,7 @@ struct General;
 
 #[tokio::main]
 async fn main() {
-    let token = env::var("DISCORD_TOKEN").expect("token");
+    let token = env::var("DISCORD_TOKEN").expect("Discord token");
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("$"))
         .group(&GENERAL_GROUP);
@@ -176,22 +177,10 @@ async fn playtop(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         }
     };
 
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler_lock) => handler_lock,
-        None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Not in a voice channel")
-                    .await,
-            );
+    let util::GuildData { handler_lock, .. } = match util::get_guild_data(ctx, msg).await {
+        Ok(guild_data) => guild_data,
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
             return Ok(());
         }
     };
@@ -281,6 +270,63 @@ async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     };
 
     track.stop().expect("Error while trying to stop track");
+
+    Ok(())
+}
+
+#[command]
+#[num_args(2)]
+#[aliases("move")]
+#[only_in(guilds)]
+async fn move_track(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let first_index = match args.single::<usize>() {
+        Ok(arg) => arg,
+        Err(_) => {
+            check_msg(
+                msg.channel_id
+                    .say(&ctx.http, "You need to provide a first index")
+                    .await,
+            );
+            return Ok(());
+        }
+    };
+
+    let second_index = match args.single::<usize>() {
+        Ok(arg) => arg,
+        Err(_) => {
+            check_msg(
+                msg.channel_id
+                    .say(&ctx.http, "You need to provide a second index")
+                    .await,
+            );
+            return Ok(());
+        }
+    };
+
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    let handler_lock = match manager.get(guild_id) {
+        Some(handler_lock) => handler_lock,
+        None => {
+            check_msg(
+                msg.channel_id
+                    .say(&ctx.http, "Not in a voice channel")
+                    .await,
+            );
+            return Ok(());
+        }
+    };
+
+    let handler = handler_lock.lock().await;
+    let queue = handler.queue();
+    
+    queue.modify_queue(|q| q.swap(first_index, second_index));
 
     Ok(())
 }

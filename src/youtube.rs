@@ -47,7 +47,7 @@ pub async fn get_url_from_msg(msg: &Message) -> Result<String, &'static str> {
 }
 
 async fn request_youtube(query: &str) -> Result<YoutubeResponse, reqwest::Error> {
-    let youtube_token = env::var("YOUTUBE_TOKEN").expect("token");
+    let youtube_token = env::var("YOUTUBE_TOKEN").expect("Youtube token");
     let url = format!(
         "https://youtube.googleapis.com/youtube/v3/search?q={}&type=video&key={}",
         query, youtube_token
