@@ -1,18 +1,18 @@
-use std::{sync::Arc};
+use std::sync::Arc;
 
 use serenity::{
     client::Context,
-    model::{prelude::{Guild, GuildId, Message}},
+    model::prelude::{Guild, GuildId, Message},
     Result as SerenityResult,
 };
-use songbird::{Songbird, Call};
+use songbird::{Call, Songbird};
 use tokio::sync::Mutex;
 
 pub struct GuildData {
     pub guild: Guild,
     pub guild_id: GuildId,
     pub manager: Arc<Songbird>,
-    pub handler_lock: Arc<Mutex<Call>>
+    pub handler_lock: Arc<Mutex<Call>>,
 }
 
 pub async fn get_guild_data(ctx: &Context, msg: &Message) -> Result<GuildData, String> {
@@ -21,7 +21,7 @@ pub async fn get_guild_data(ctx: &Context, msg: &Message) -> Result<GuildData, S
 
     let manager = match songbird::get(ctx).await {
         Some(manager) => manager,
-        None => return Err("Error getting voice connection".to_string())
+        None => return Err("Error getting voice connection".to_string()),
     };
 
     let handler_lock = match manager.get(guild_id) {
@@ -35,7 +35,7 @@ pub async fn get_guild_data(ctx: &Context, msg: &Message) -> Result<GuildData, S
         guild,
         guild_id,
         manager,
-        handler_lock
+        handler_lock,
     })
 }
 

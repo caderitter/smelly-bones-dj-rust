@@ -17,8 +17,8 @@ use serenity::{
 };
 use songbird::{input::Restartable, SerenityInit};
 
-mod youtube;
 mod util;
+mod youtube;
 
 struct Handler;
 
@@ -206,13 +206,9 @@ async fn playtop(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     // if we queue a song while one is playing, our queue is now size two - don't do anything
     // else, pop the newly queued track and put it in the "front" - behind the currently playing track
     if queue.len() > 2 {
-        queue.modify_queue(|q| {
-            match q.pop_back() {
-                Some(track) => {
-                    q.insert(1, track)
-                },
-                None => ()
-            }
+        queue.modify_queue(|q| match q.pop_back() {
+            Some(track) => q.insert(1, track),
+            None => (),
         });
     }
 
@@ -325,7 +321,7 @@ async fn move_track(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
 
     let handler = handler_lock.lock().await;
     let queue = handler.queue();
-    
+
     queue.modify_queue(|q| q.swap(first_index, second_index));
 
     Ok(())
