@@ -13,9 +13,11 @@ use serenity::{
     },
     model::{channel::Message, gateway::Ready},
     prelude::GatewayIntents,
-    Result as SerenityResult,
 };
 use songbird::{input::Restartable, SerenityInit};
+
+use crate::util::{check_msg, get_guild_data, GuildData};
+use crate::youtube::get_url_from_msg;
 
 mod util;
 mod youtube;
@@ -55,7 +57,7 @@ async fn main() {
 #[command]
 #[only_in(guilds)]
 async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    let url = match youtube::get_url_from_msg(msg).await {
+    let url = match get_url_from_msg(msg).await {
         Ok(url) => url,
         Err(why) => {
             check_msg(msg.channel_id.say(&ctx.http, why).await);
@@ -63,13 +65,18 @@ async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         }
     };
 
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
+    let GuildData {
+        guild,
+        guild_id,
+        manager,
+        ..
+    } = match get_guild_data(ctx, msg).await {
+        Ok(guild_data) => guild_data,
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
+            return Ok(());
+        }
+    };
 
     let handler_lock = match manager.get(guild_id) {
         Some(handler_lock) => handler_lock,
@@ -126,22 +133,10 @@ async fn play(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
 #[command]
 #[only_in(guilds)]
 async fn skip(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler_lock) => handler_lock,
-        None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Not in a voice channel")
-                    .await,
-            );
+    let GuildData { handler_lock, .. } = match get_guild_data(ctx, msg).await {
+        Ok(guild_data) => guild_data,
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
             return Ok(());
         }
     };
@@ -169,7 +164,7 @@ async fn skip(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
 #[command]
 #[only_in(guilds)]
 async fn playtop(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
-    let url = match youtube::get_url_from_msg(msg).await {
+    let url = match get_url_from_msg(msg).await {
         Ok(url) => url,
         Err(why) => {
             check_msg(msg.channel_id.say(&ctx.http, why).await);
@@ -177,7 +172,7 @@ async fn playtop(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         }
     };
 
-    let util::GuildData { handler_lock, .. } = match util::get_guild_data(ctx, msg).await {
+    let GuildData { handler_lock, .. } = match get_guild_data(ctx, msg).await {
         Ok(guild_data) => guild_data,
         Err(why) => {
             check_msg(msg.channel_id.say(&ctx.http, why).await);
@@ -191,9 +186,7 @@ async fn playtop(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
         Ok(source) => source,
         Err(why) => {
             println!("Err starting source: {:?}", why);
-
             check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
             return Ok(());
         }
     };
@@ -235,22 +228,10 @@ async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         }
     };
 
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler_lock) => handler_lock,
-        None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Not in a voice channel")
-                    .await,
-            );
+    let GuildData { handler_lock, .. } = match get_guild_data(ctx, msg).await {
+        Ok(guild_data) => guild_data,
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
             return Ok(());
         }
     };
@@ -276,7 +257,18 @@ async fn remove(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 #[only_in(guilds)]
 async fn move_track(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let first_index = match args.single::<usize>() {
-        Ok(arg) => arg,
+        Ok(arg) => {
+            if arg < 1 {
+                check_msg(
+                    msg.channel_id
+                        .say(&ctx.http, "First index must be greater than or equal to 1")
+                        .await,
+                );
+                return Ok(());
+            } else {
+                arg
+            }
+        }
         Err(_) => {
             check_msg(
                 msg.channel_id
@@ -288,7 +280,18 @@ async fn move_track(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     };
 
     let second_index = match args.single::<usize>() {
-        Ok(arg) => arg,
+        Ok(arg) => {
+            if arg < 1 {
+                check_msg(
+                    msg.channel_id
+                        .say(&ctx.http, "Second index must be greater than or equal to 1")
+                        .await,
+                );
+                return Ok(());
+            } else {
+                arg
+            }
+        }
         Err(_) => {
             check_msg(
                 msg.channel_id
@@ -299,22 +302,10 @@ async fn move_track(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         }
     };
 
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler_lock) => handler_lock,
-        None => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Not in a voice channel")
-                    .await,
-            );
+    let GuildData { handler_lock, .. } = match get_guild_data(ctx, msg).await {
+        Ok(guild_data) => guild_data,
+        Err(why) => {
+            check_msg(msg.channel_id.say(&ctx.http, why).await);
             return Ok(());
         }
     };
@@ -322,13 +313,17 @@ async fn move_track(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     let handler = handler_lock.lock().await;
     let queue = handler.queue();
 
+    let max_index = queue.len() - 1;
+    if first_index > max_index || second_index > max_index {
+        check_msg(
+            msg.channel_id
+                .say(&ctx.http, "Provided indices are out of bounds")
+                .await,
+        );
+        return Ok(());
+    }
+
     queue.modify_queue(|q| q.swap(first_index, second_index));
 
     Ok(())
-}
-
-fn check_msg(result: SerenityResult<Message>) {
-    if let Err(why) = result {
-        println!("Error sending message: {:?}", why);
-    }
 }
